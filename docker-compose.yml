@@ -1,0 +1,40 @@
+# KHUSUS UJI COBA DI LAPTOP (gratis, sebelum pakai Azure).
+# Mensimulasikan 2 host x 3 VM = 6 container di satu laptop.
+# Jalankan:  docker compose up -d --build
+# Matikan:   docker compose down
+x-worker: &worker
+  build: ./worker
+  environment: &env
+    ITER_PER_MI: "20"
+
+services:
+  host1-large:
+    <<: *worker
+    cpus: 1.0
+    ports: ["5001:5000"]
+    environment: { <<: *env, VM_NAME: host1-large, HOST_NAME: host1, VM_TYPE: LARGE, VM_CPUS: "1.0" }
+  host1-medium:
+    <<: *worker
+    cpus: 0.5
+    ports: ["5002:5000"]
+    environment: { <<: *env, VM_NAME: host1-medium, HOST_NAME: host1, VM_TYPE: MEDIUM, VM_CPUS: "0.5" }
+  host1-small:
+    <<: *worker
+    cpus: 0.25
+    ports: ["5003:5000"]
+    environment: { <<: *env, VM_NAME: host1-small, HOST_NAME: host1, VM_TYPE: SMALL, VM_CPUS: "0.25" }
+  host2-large:
+    <<: *worker
+    cpus: 1.0
+    ports: ["5004:5000"]
+    environment: { <<: *env, VM_NAME: host2-large, HOST_NAME: host2, VM_TYPE: LARGE, VM_CPUS: "1.0" }
+  host2-medium:
+    <<: *worker
+    cpus: 0.5
+    ports: ["5005:5000"]
+    environment: { <<: *env, VM_NAME: host2-medium, HOST_NAME: host2, VM_TYPE: MEDIUM, VM_CPUS: "0.5" }
+  host2-small:
+    <<: *worker
+    cpus: 0.25
+    ports: ["5006:5000"]
+    environment: { <<: *env, VM_NAME: host2-small, HOST_NAME: host2, VM_TYPE: SMALL, VM_CPUS: "0.25" }

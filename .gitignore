@@ -1,0 +1,9 @@
+# hasil uji coba lokal (hasil Azure disimpan di hasil-azure/)
+scheduler/hasil/
+__pycache__/
+*.pyc
+
+# jangan pernah upload kunci atau rahasia
+*.pem
+*.key
+.env

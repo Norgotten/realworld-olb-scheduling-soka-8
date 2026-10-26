@@ -1,0 +1,12 @@
+{
+  "keterangan": "Scheduler dijalankan di host1. host2 dihubungi lewat Private IP. Harga = B2als_v2 Indonesia Central (USD per jam).",
+  "host_price_per_hour": { "host1": 0.0428, "host2": 0.0428 },
+  "workers": [
+    { "name": "host1-large",  "host": "host1", "url": "http://localhost:5001" },
+    { "name": "host1-medium", "host": "host1", "url": "http://localhost:5002" },
+    { "name": "host1-small",  "host": "host1", "url": "http://localhost:5003" },
+    { "name": "host2-large",  "host": "host2", "url": "http://172.16.0.5:5001" },
+    { "name": "host2-medium", "host": "host2", "url": "http://172.16.0.5:5002" },
+    { "name": "host2-small",  "host": "host2", "url": "http://172.16.0.5:5003" }
+  ]
+}
