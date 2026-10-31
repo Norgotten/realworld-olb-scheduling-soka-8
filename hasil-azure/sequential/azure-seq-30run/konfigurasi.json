@@ -1,0 +1,78 @@
+{
+  "schema_version": 2,
+  "name": "azure-seq-30run",
+  "sampling": "sequential",
+  "created_at": "2026-10-31T06:47:23+00:00",
+  "dataset": {
+    "file": "GoCJ_Dataset_1000.csv",
+    "sha256": "8e325aa6f5b928e8bf2a75432dfcdf8a1e4f233be3f684e6dfd0252fb58ea402",
+    "rows": 1000
+  },
+  "iter_per_mi": 20,
+  "sizes": [
+    100,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    1000
+  ],
+  "runs": 3,
+  "order": "run",
+  "task_timeout_s": 600,
+  "workers_file": "workers.azure.json",
+  "workers": [
+    {
+      "name": "host1-large",
+      "host": "host1",
+      "url": "http://localhost:5001",
+      "type": "LARGE",
+      "cpus": "1.0"
+    },
+    {
+      "name": "host1-medium",
+      "host": "host1",
+      "url": "http://localhost:5002",
+      "type": "MEDIUM",
+      "cpus": "0.5"
+    },
+    {
+      "name": "host1-small",
+      "host": "host1",
+      "url": "http://localhost:5003",
+      "type": "SMALL",
+      "cpus": "0.25"
+    },
+    {
+      "name": "host2-large",
+      "host": "host2",
+      "url": "http://172.16.0.5:5001",
+      "type": "LARGE",
+      "cpus": "1.0"
+    },
+    {
+      "name": "host2-medium",
+      "host": "host2",
+      "url": "http://172.16.0.5:5002",
+      "type": "MEDIUM",
+      "cpus": "0.5"
+    },
+    {
+      "name": "host2-small",
+      "host": "host2",
+      "url": "http://172.16.0.5:5003",
+      "type": "SMALL",
+      "cpus": "0.25"
+    }
+  ],
+  "host_price_per_hour": {
+    "host1": 0.0428,
+    "host2": 0.0428
+  },
+  "scheduler_host": "host1",
+  "python": "3.12.3"
+}

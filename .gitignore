@@ -7,3 +7,6 @@ __pycache__/
 *.pem
 *.key
 .env
+
+# file sementara saat laporan ditulis
+*.tmp

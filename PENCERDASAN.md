@@ -1,48 +1,62 @@
 # PENCERDASAN: Cara Setup OLB Real World (Azure + Docker)
 
 Panduan langkah demi langkah dari nol: uji di laptop, membuat infrastruktur di Azure,
-menjalankan ujicoba, sampai mematikan VM. Penjelasan cara kerja kode ada di
-[PENCERDASAN2.md](PENCERDASAN2.md).
+menjalankan pengujian, sampai mematikan VM. Penjelasan cara kerja kode ada di
+[PENCERDASAN2.md](PENCERDASAN2.md). Prosedur pengujian sekuensial 30 run (termasuk backup
+hasil lama dan pemantauan CPU credits) ada di [PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md).
 
-Target infrastruktur: **1 datacenter, 2 host, 3 VM per host (total 6 VM)**.
+Target infrastruktur: **2 host (Azure VM), 3 worker (Docker container) per host, total 6 worker**.
 
 ---
 
 ## 0. Gambaran besar
 
 ```
-Azure, region Indonesia Central (Datacenter = Resource Group "soka8-dc")
+Microsoft Azure, region Indonesia Central   (resource group "soka8-dc")
  |
- |  jaringan internal: vnet-indonesiacentral-1 (172.16.0.0/24)
+ |  jaringan privat: vnet-indonesiacentral-1 (172.16.0.0/24)
  |
- |-- VM Azure "host1" (B2als_v2, 2 vCPU, 4 GB)  = HOST 1   private IP 172.16.0.4
- |     |-- container host1-large   (jatah 1.0 CPU)   port 5001
- |     |-- container host1-medium  (jatah 0.5 CPU)   port 5002
- |     |-- container host1-small   (jatah 0.25 CPU)  port 5003
- |     '-- scheduler OLB (program Python yang bagi-bagi task)
+ |-- Azure VM "host1" (B2als_v2, 2 vCPU, 4 GiB) = HOST 1   private IP 172.16.0.4
+ |     |-- worker host1-large   (Docker container, batas 1,0 CPU)   port 5001
+ |     |-- worker host1-medium  (Docker container, batas 0,5 CPU)   port 5002
+ |     |-- worker host1-small   (Docker container, batas 0,25 CPU)  port 5003
+ |     '-- scheduler OLB (proses Python yang membagi task)
  |
- '-- VM Azure "host2" (B2als_v2, 2 vCPU, 4 GB)  = HOST 2   private IP 172.16.0.5
-       |-- container host2-large   (jatah 1.0 CPU)   port 5001
-       |-- container host2-medium  (jatah 0.5 CPU)   port 5002
-       '-- container host2-small   (jatah 0.25 CPU)  port 5003
+ '-- Azure VM "host2" (B2als_v2, 2 vCPU, 4 GiB) = HOST 2   private IP 172.16.0.5
+       |-- worker host2-large   (Docker container, batas 1,0 CPU)   port 5001
+       |-- worker host2-medium  (Docker container, batas 0,5 CPU)   port 5002
+       '-- worker host2-small   (Docker container, batas 0,25 CPU)  port 5003
 ```
+
+Istilah yang dipakai di seluruh dokumen:
+
+| Istilah | Arti di proyek ini |
+|---|---|
+| Azure VM / host | Mesin virtual Azure `host1` dan `host2`, host eksekusi pada arsitektur proyek |
+| Worker | Docker container (`host1-large`, dst.), representasi logis VM CloudSim. **Bukan** VM sungguhan |
+| Scheduler | Proses Python `olb_scheduler.py` yang berjalan di host1 |
+| Azure Region | Lokasi deployment (Indonesia Central), bukan bukti satu datacenter fisik tertentu |
+| Resource group | Pengelompokan logis resource Azure (`soka8-dc`) |
+
+Pemetaan dari CloudSim (analogi, tidak identik):
 
 | Di CloudSim | Di real world |
 |---|---|
-| Datacenter | Resource Group `soka8-dc` di Azure |
-| Host | VM Azure (host1, host2) |
-| VM (Large/Medium/Small) | Container Docker dengan batas CPU berbeda |
-| Cloudlet (panjang MI dari GoCJ) | Task yang benar-benar membuat CPU sibuk, sebanding dengan MI |
-| `applyOlbScheduling` | `scheduler/olb_scheduler.py` |
-| Makespan hasil hitungan | Makespan waktu nyata (detik) |
+| Datacenter | Tidak ada padanan fisik yang pasti; resource berada di region Indonesia Central dan dikelompokkan di resource group `soka8-dc` |
+| Host | Azure VM (host1, host2) |
+| VM (Large/Medium/Small) | Worker: Docker container dengan batas CPU berbeda |
+| Cloudlet (panjang MI dari GoCJ) | Task yang dijalankan sebagai beban CPU sintetis, sebanding dengan MI |
+| `applyOlbScheduling` | `run_olb` di `scheduler/olb_scheduler.py` |
+| Makespan hasil model | Makespan waktu nyata (detik) |
 
-Cara kerja OLB di sini: scheduler mengirim tiap task ke VM yang **paling awal siap**
-(menganggur paling dulu). VM dianggap siap saat ia benar-benar selesai mengerjakan task
-sebelumnya, bukan dari hitungan rumus seperti di CloudSim.
+Cara kerja OLB di sini: scheduler mengirim task ke worker yang sedang idle. Kalau ada beberapa
+yang idle, dipilih yang **paling awal siap**. Worker dianggap siap saat responsnya diterima
+scheduler, yaitu saat ia benar-benar selesai mengerjakan task sebelumnya, bukan dari hitungan
+rumus seperti di CloudSim.
 
-Kenapa container, bukan VM Azure langsung? Di Azure kita tidak bisa memilih server fisik
-tempat VM ditaruh, jadi "host" tidak bisa ditunjukkan. Solusinya, VM Azure dijadikan host,
-lalu di dalamnya dijalankan beberapa container (virtualisasi ringan) sebagai VM.
+Kenapa container, bukan Azure VM langsung sebagai "VM"? Di Azure kita tidak bisa memilih server
+fisik tempat VM ditaruh, jadi lapisan "host" tidak bisa ditunjukkan. Solusinya, Azure VM dijadikan
+host, lalu di dalamnya dijalankan beberapa container dengan batas CPU berbeda sebagai worker.
 
 ---
 
@@ -50,19 +64,22 @@ lalu di dalamnya dijalankan beberapa container (virtualisasi ringan) sebagai VM.
 
 ```
 olb-realworld/
-|-- README.md                  <- gambaran singkat proyek
+|-- README.md                  <- gambaran proyek, metrik, keterbatasan
 |-- PENCERDASAN.md             <- panduan setup ini
 |-- PENCERDASAN2.md            <- penjelasan cara kerja kode
-|-- docker-compose.yml         <- khusus uji coba di laptop (6 VM sekaligus)
-|-- hasil-azure/               <- hasil ujicoba di Azure
+|-- PANDUAN_PENGUJIAN.md       <- uji lokal, backup, benchmark Azure 30 run
+|-- REVISI_TAHAP1.md           <- daftar perubahan revisi tahap 1
+|-- docker-compose.yml         <- khusus uji coba di laptop (6 worker sekaligus)
+|-- hasil-azure/               <- hasil pengujian di Azure (historis dan baru)
 |-- worker/
-|   |-- worker.py              <- program "VM": terima task, kerjakan, lapor
+|   |-- worker.py              <- program worker: terima task, kerjakan, lapor
 |   |-- Dockerfile             <- resep membungkus worker.py jadi container
-|   '-- start_host.sh          <- menyalakan 3 VM di satu host Azure
+|   '-- start_host.sh          <- menyalakan 3 worker di satu Azure VM
 '-- scheduler/
-    |-- olb_scheduler.py       <- algoritma OLB + hitung metrik
-    |-- workers.local.json     <- daftar VM untuk uji di laptop
-    |-- workers.azure.json     <- daftar VM untuk di Azure (sudah diisi)
+    |-- olb_scheduler.py       <- algoritma OLB, validasi, metrik, penyimpanan hasil
+    |-- tests/                 <- unit test (tanpa Docker)
+    |-- workers.local.json     <- daftar worker untuk uji di laptop
+    |-- workers.azure.json     <- daftar worker di Azure (sudah diisi)
     '-- dataset/GoCJ_Dataset_1000.csv
 ```
 
@@ -72,29 +89,22 @@ Semua kode cuma pakai library bawaan Python. Tidak perlu `pip install`.
 
 ## 2. Tahap A: Coba di laptop dulu (gratis)
 
-Tujuannya memastikan semua jalan sebelum kredit Azure kepotong.
+Tujuannya memastikan semua jalan sebelum kredit Azure terpakai. Langkah lengkapnya, termasuk
+unit test, simulasi worker gagal, dan cek perlindungan data, ada di
+[PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian A. Ringkasnya, dari folder `olb-realworld`:
 
-**Yang dibutuhkan:** Docker Desktop dan Python 3 terpasang di laptop.
+```
+docker compose up -d --build
+python -m unittest discover -s scheduler/tests -v
+cd scheduler
+python olb_scheduler.py --workers workers.local.json --check
+python olb_scheduler.py --workers workers.local.json --name uji-laptop --sizes 100 --runs 1
+cd ..
+docker compose down
+```
 
-1. Buka terminal (PowerShell kalau Windows) di folder `olb-realworld`.
-2. Nyalakan 6 VM:
-   ```
-   docker compose up -d --build
-   ```
-   Cek: `docker ps` harus menampilkan 6 container.
-3. Masuk ke folder scheduler dan cek koneksi:
-   ```
-   cd scheduler
-   python olb_scheduler.py --workers workers.local.json --check
-   ```
-   (Di Mac/Linux pakai `python3`.) Harus muncul 6 baris `OK`.
-4. Jalankan uji kecil:
-   ```
-   python olb_scheduler.py --workers workers.local.json --sizes 100 --runs 1
-   ```
-   Hasil muncul di layar dan tersimpan di folder `scheduler/hasil/`.
-   Cost akan 0 karena harga laptop memang diset 0.
-5. Kalau sudah, matikan: `docker compose down` (dari folder `olb-realworld`).
+Hasil tersimpan di `scheduler/hasil/sequential/uji-laptop/`. Cost akan 0 karena tarif laptop
+memang diset 0. Kalau `python` tidak dikenal di Windows, pakai `py`.
 
 ---
 
@@ -122,12 +132,13 @@ Semua langkah ini di https://portal.azure.com dengan akun Azure for Students.
 Budget hanya mengirim email, tidak mematikan VM. Azure for Students tidak menagih uang
 pribadi; kalau kredit habis, layanan hanya berhenti.
 
-### B2. Buat Resource Group (= datacenter)
+### B2. Buat Resource Group
 
 1. Cari **Resource groups**, klik **Create**.
 2. Subscription: Azure for Students. Nama: `soka8-dc`. Region: bebas.
 3. **Review + create**, lalu **Create**.
 
+Resource group adalah pengelompokan logis untuk resource Azure, bukan datacenter fisik.
 Region resource group hanya tempat menyimpan catatan isinya. VM di dalamnya boleh
 berada di region lain.
 
@@ -167,7 +178,10 @@ Cari **Virtual machines**, klik **Create**, pilih **Azure virtual machine**.
 | Public inbound ports | Allow selected ports |
 | Select inbound ports | **SSH (22)** (peringatan kuning normal) |
 
-Kenapa B2als_v2: ukuran 2 vCPU dengan RAM 4 GB, harga sekitar **$0.0428/jam**.
+Kenapa B2als_v2: ukuran 2 vCPU dengan RAM 4 GB, estimasi harga di Azure Portal saat VM dibuat
+sekitar **$0.0428/jam**. Nilai ini dipakai sebagai asumsi tarif untuk Estimated Compute Cost.
+B2als_v2 bersifat burstable (performa dasar 30%, memakai CPU credits); lihat
+[PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian E1.
 Ukuran 1 GB (B2ats_v2) lebih murah tapi RAM terlalu mepet.
 
 **Tab Disks**
@@ -198,7 +212,7 @@ Catatan: disk tetap ditagih kecil walau VM di-Stop. Hapus resource group setelah
 **Tab Management**
 
 Biarkan semua default. Auto-shutdown **tidak didukung** di region Indonesia Central,
-jadi VM wajib di-Stop manual (lihat B10).
+jadi VM wajib di-Stop manual (lihat C7).
 
 **Review + create**
 
@@ -249,18 +263,22 @@ Hal yang perlu diketahui:
   Ketik `yes`, Enter.
 - Saat mengetik password, layar **tidak menampilkan apa pun**. Itu normal, ketik saja lalu Enter.
 
-### C1. Kirim folder proyek ke kedua host
+### C1. Kirim folder proyek ke kedua host (hanya saat setup pertama)
+
+Langkah ini hanya untuk host yang **belum** punya folder `olb-realworld`. Untuk memperbarui
+scheduler di host1 yang sudah berisi hasil pengujian, **jangan** pakai `scp -r` seluruh folder,
+karena folder `scheduler/hasil` dari laptop bisa menimpa file di host1. Ikuti
+[PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian B (backup) dan C (update scheduler).
 
 Buka terminal di folder yang **berisi** folder `olb-realworld` (bukan di dalamnya).
 Di Windows: buka folder itu di File Explorer, klik kanan area kosong, pilih
-**Open in Terminal**.
+**Open in Terminal**. Hapus dulu folder `olb-realworld/scheduler/hasil` di laptop kalau ada,
+supaya hasil uji laptop tidak ikut terkirim.
 
 ```
 scp -r olb-realworld azureuser@PUBLIC_IP_HOST1:~/
 scp -r olb-realworld azureuser@PUBLIC_IP_HOST2:~/
 ```
-
-Kalau folder `scheduler/hasil` dari Tahap A ikut terkirim, tidak masalah.
 
 ### C2. Siapkan host1
 
@@ -276,7 +294,7 @@ Install Docker (sekali saja, 1 sampai 2 menit):
 curl -fsSL https://get.docker.com | sudo sh
 ```
 
-Nyalakan 3 VM:
+Nyalakan 3 worker:
 ```
 bash ~/olb-realworld/worker/start_host.sh host1
 ```
@@ -294,31 +312,34 @@ exit
 ```
 Harus tampil `host2-large`, `host2-medium`, `host2-small`.
 
-### C4. Cek koneksi ke 6 VM (dari host1)
+### C4. Cek koneksi ke 6 worker (dari host1)
 
 ```
 ssh azureuser@PUBLIC_IP_HOST1
 cd ~/olb-realworld/scheduler
 python3 olb_scheduler.py --workers workers.azure.json --check
 ```
-Harus muncul 6 baris `OK`: 3 dari host1, 3 dari host2.
+Harus muncul 6 baris `OK` (3 dari host1, 3 dari host2), masing-masing dengan `iter_per_mi=20`,
+diakhiri `Semua 6 worker siap, ITER_PER_MI = 20.` Scheduler juga memeriksa bahwa nama dan host
+setiap worker sesuai dengan `workers.azure.json`.
 
-### C5. Jalankan ujicoba
+### C5. Jalankan pengujian
 
-Masih di host1:
+Prosedur pengujian sekuensial 30 run (3 sesi, pemantauan CPU credits, tmux, dan penanganan
+kegagalan) ada di [PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian D dan E.
+
+Sebagai catatan sejarah, pengujian 26 Oktober 2026 (100/200/300 task x 3) dijalankan dengan
+scheduler versi sebelum revisi memakai perintah:
 ```
 python3 olb_scheduler.py --workers workers.azure.json --sizes 100 200 300 --runs 3
 ```
-Totalnya 9 run, biasanya beberapa menit. Hasil tersimpan di
-`~/olb-realworld/scheduler/hasil/`:
-- `HASIL_REALWORLD.md`: tabel rata-rata dan detail tiap run
-- `ringkasan.csv`: angka tiap run (bisa dibuka di Excel untuk grafik)
-- `tasks_<N>_run<R>.csv`: log tiap task (task ke VM mana, mulai, selesai)
+Versi lama itu menulis langsung ke `scheduler/hasil/` dan menimpa file dengan nama yang sama.
+Versi sekarang menulis ke `scheduler/hasil/sequential/<nama-eksperimen>/` dan tidak pernah
+menimpa file yang sudah ada.
 
-Untuk bukti laporan, screenshot: terminal C4 dan C5, `sudo docker ps` di tiap host,
-dan halaman Virtual machines di Azure Portal yang menampilkan host1 dan host2.
-
-Keluar: `exit`
+Untuk bukti laporan, screenshot: terminal `--check` dan sesi pengujian, `sudo docker ps` di tiap
+host, halaman Virtual machines di Azure Portal yang menampilkan host1 dan host2, dan grafik
+CPU Credits Remaining kedua host.
 
 ### C6. Ambil hasil ke laptop
 
@@ -326,20 +347,20 @@ Pastikan sudah `exit` dari host1. Tulisan di depan terminal harus **bukan**
 `azureuser@host1` lagi (di Windows jadi `PS C:\...>`). Kalau perintah ini dijalankan
 masih di dalam host1, file hanya tersalin di host1 sendiri, tidak sampai ke laptop.
 
-Dari terminal laptop:
+Dari terminal laptop (ganti `azure-seq-30run` dengan nama eksperimen):
 ```
-scp -r azureuser@PUBLIC_IP_HOST1:~/olb-realworld/scheduler/hasil ./hasil-azure
+scp -r azureuser@PUBLIC_IP_HOST1:~/olb-realworld/scheduler/hasil/sequential/azure-seq-30run ./
 ```
-Folder `hasil-azure` muncul di folder tempat terminal laptop sedang berada.
-Di Windows bisa langsung dibuka dengan `explorer hasil-azure`.
+Di Windows bisa langsung dibuka dengan `explorer azure-seq-30run`.
 
 ### C7. MATIKAN VM (wajib tiap selesai sesi)
 
 - Azure Portal, buka **host1**, klik **Stop**. Ulangi untuk **host2**.
   Status harus **Stopped (deallocated)**. Mematikan lewat `sudo shutdown` dari dalam VM
-  **tidak** menghentikan tagihan.
+  **tidak** menghentikan tagihan komputasi.
 - Menyalakan lagi: klik **Start**. Container otomatis ikut nyala
   (sudah diset `--restart unless-stopped`). Public IP bisa berubah, cek lagi di halaman VM.
+  Cek juga Private IP host2 tetap `172.16.0.5`, lalu jalankan `--check`.
 - Tugas sudah dinilai: hapus resource group `soka8-dc` (Resource groups, pilih,
   **Delete resource group**). Semua isinya ikut terhapus dan tagihan berhenti total.
 
@@ -349,25 +370,29 @@ Di Windows bisa langsung dibuka dengan `explorer hasil-azure`.
 
 | Metrik | Arti | Rumus |
 |---|---|---|
-| Makespan | Waktu dari task pertama dikirim sampai task terakhir selesai | `max(finish)` |
-| Cost | Biaya sewa semua host selama makespan | `jumlah harga per jam host x makespan / 3600` |
-| Resource Utilization | Seberapa sibuk VM rata-rata selama makespan | `total waktu sibuk semua VM / (jumlah VM x makespan) x 100%` |
-| Degree of Imbalance | Seberapa timpang beban antar VM | `(sibuk VM tersibuk - sibuk VM tersantai) / rata-rata sibuk` |
+| Makespan (detik) | Durasi dari awal penjadwalan batch sampai respons task terakhir diterima scheduler, termasuk overhead komunikasi | `max(finish)` |
+| Estimated Compute Cost (USD) | Estimasi biaya komputasi dua host selama makespan. Bukan tagihan Azure sebenarnya | `(tarif host1 + tarif host2) x makespan / 3600` |
+| Resource Utilization (%) | Utilisasi waktu kerja worker. Bukan `Percentage CPU` Azure | `total waktu eksekusi semua worker / (jumlah worker x makespan) x 100` |
+| Degree of Imbalance | Ketimpangan total waktu sibuk antarworker (0 = merata) | `(sibuk maks - sibuk min) / rata-rata sibuk` |
 
-Rumus RU dan DI sama dengan versi CloudSim, jadi hasilnya bisa dibandingkan.
+Bentuk rumus RU dan DI mengikuti versi CloudSim, tetapi angka mentahnya tidak dibandingkan
+langsung karena cara mengukur waktu berbeda. Rumus biaya juga berbeda: CloudSim memakai tarif
+per tipe VM dikali waktu eksekusi, versi real world memakai tarif dua Azure VM selama makespan.
+Penjelasan lengkap ada di [README.md](README.md) bagian 7.
 
 ---
 
-## 6. Faktor skala
+## 6. Faktor skala `ITER_PER_MI`
 
-Panjang task GoCJ 15.000 sampai 900.000 MI. Kalau dikerjakan apa adanya, satu run bisa
-berjam-jam. Karena itu tiap 1 MI diubah jadi `ITER_PER_MI` putaran loop (default **20**).
-Semua task diskala dengan faktor yang sama, jadi perbandingan besar kecilnya tetap.
+Panjang task GoCJ 15.000 sampai 900.000 MI. Tiap 1 MI diubah menjadi `ITER_PER_MI` iterasi
+fungsi `burn_cpu()`, dengan nilai **20** untuk seluruh eksperimen proyek ini. Rasio beban
+antartask tetap sama dengan dataset, tetapi jumlah instruksi mesin tidak sama dengan MI di
+CloudSim. Nilai 20 belum dikalibrasi; alasannya dipertahankan dijelaskan di
+[README.md](README.md) bagian 5.
 
-Mau task lebih lama? Nyalakan ulang kedua host dengan nilai yang sama, misalnya:
-```
-ITER_PER_MI=50 bash ~/olb-realworld/worker/start_host.sh host1
-```
+Scheduler menolak berjalan kalau ada worker yang memakai nilai selain 20
+(opsi `--expect-iter`, default 20). Jangan mengubah `ITER_PER_MI` untuk eksperimen ini, karena
+hasilnya tidak akan konsisten dengan pengujian sebelumnya.
 
 ---
 
@@ -379,14 +404,27 @@ ITER_PER_MI=50 bash ~/olb-realworld/worker/start_host.sh host1
 | `ssh` atau `scp` timeout | VM harus status Running. Cek Public IP terbaru (bisa berubah setelah Stop/Start). |
 | `Permission denied, please try again` | Password salah. Ketik ulang pelan-pelan (memang tidak terlihat). |
 | `$'\r': command not found` saat `start_host.sh` | File berubah format Windows. Jalankan `sed -i 's/\r$//' ~/olb-realworld/worker/start_host.sh` lalu ulangi. |
-| `--check` GAGAL untuk VM host2 | Private IP di `workers.azure.json` harus sama dengan host2. Host2 harus satu VNet dengan host1. Cek `sudo docker ps` di host2. |
-| `--check` GAGAL untuk VM host1 | Jalankan lagi `start_host.sh host1`, lalu `sudo docker ps`. |
+| `--check` GAGAL untuk worker host2 | Private IP di `workers.azure.json` harus sama dengan host2. Host2 harus satu VNet dengan host1. Cek `sudo docker ps` di host2. |
+| `--check` GAGAL untuk worker host1 | Jalankan lagi `start_host.sh host1`, lalu `sudo docker ps`. |
+| `--check` melapor `ITER_PER_MI` atau nama worker salah | Jalankan ulang `start_host.sh` di host tersebut tanpa variabel `ITER_PER_MI`. |
 | `permission denied` saat docker | Tambahkan `sudo` di depan perintah docker. |
 | Di laptop, `docker compose` error | Buka Docker Desktop dulu, tunggu statusnya running. |
+| Pesan lain dari scheduler | Lihat [PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian G. |
 
 ---
 
-## 8. Sebelum upload ke GitHub
+## 8. Keamanan jaringan
+
+Worker memakai HTTP tanpa autentikasi di port 5001 sampai 5003. Ini cukup untuk eksperimen
+selama port tersebut **hanya** dapat diakses dari jaringan privat Azure.
+
+- Di Network Security Group kedua VM, yang terbuka ke internet hanya SSH (22).
+- Jangan menambahkan aturan inbound untuk 5001 sampai 5003 dari `Any` atau `Internet`.
+- Cara mengecek ada di [PANDUAN_PENGUJIAN.md](PANDUAN_PENGUJIAN.md) bagian D.
+
+---
+
+## 9. Sebelum upload ke GitHub
 
 Aman di-upload: semua kode, dataset, Private IP `172.16.0.x` (hanya berlaku di dalam
 jaringan internal Azure, tidak bisa diakses dari internet), harga, nama region.
@@ -396,18 +434,23 @@ Subscription ID, dan screenshot yang memuat hal-hal itu (sensor dulu).
 
 ---
 
-## 9. Bahan untuk laporan / presentasi
+## 10. Bahan untuk laporan / presentasi
 
 - **Arsitektur**: gambar di bagian 0.
 - **Bukti real world**: screenshot Azure Portal (host1 dan host2 di resource group
-  `soka8-dc`, region Indonesia Central) dan `sudo docker ps` di tiap host.
+  `soka8-dc`, region Indonesia Central), `sudo docker ps` di tiap host, dan grafik
+  CPU Credits Remaining selama sesi pengujian.
 - **Perbandingan dengan CloudSim**:
   - Di CloudSim, run 1, 2, 3 hasilnya identik karena simulasi deterministik.
-  - Di real world, hasil sedikit berbeda tiap run karena jeda jaringan dan fluktuasi CPU.
-    VM seri B juga bertipe *burstable* (CPU bisa naik turun), salah satu sumber variasi.
-  - Di CloudSim ready time dihitung dari rumus, di real world ready time diamati langsung.
-- **Pola OLB yang terlihat**: VM Large lebih cepat kosong, jadi otomatis kebagian task lebih
-  banyak. Tapi OLB tetap mengirim task besar ke VM Small kalau kebetulan Small yang sedang
-  kosong, karena OLB tidak melihat kecepatan VM. Akibatnya di akhir sering ada VM Small yang
-  masih mengerjakan task besar sendirian sementara yang lain sudah selesai, dan ini yang
-  memperbesar makespan. Lihat kolom jumlah task per VM dan file `tasks_*.csv`.
+  - Di real world, hasil berbeda tiap run walaupun input identik, karena jaringan, penjadwalan
+    CPU, dan kondisi host. VM seri B bersifat burstable, salah satu sumber variasi.
+  - Di CloudSim ready time dimodelkan, di real world ready time diamati dari respons worker.
+  - Waktu absolut tidak dibandingkan langsung karena `ITER_PER_MI` tidak membuat jumlah
+    instruksi sama dengan MI. Yang dibandingkan adalah pola.
+- **Pola OLB yang terlihat**: worker Large lebih cepat kosong, jadi otomatis mendapat task lebih
+  banyak. OLB tetap mengirim task besar ke worker Small kalau kebetulan Small yang sedang
+  kosong, karena OLB tidak melihat kecepatan worker. Akibatnya di akhir sering ada worker Small
+  yang masih mengerjakan task besar sendirian, dan ini memperbesar makespan. Karena worker
+  hampir tidak pernah menganggur selama masih ada task, waktu sibuknya cenderung merata (DI
+  rendah), sedangkan ketimpangan lebih terlihat pada jumlah task per worker. Lihat tabel
+  jumlah task per worker di `HASIL_REALWORLD.md` dan file `tasks/tasks_*.csv`.
